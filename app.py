@@ -12,6 +12,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.backends.backend_pdf import PdfPages
 import pandas as pd
 
 # ── Configurare pagina ─────────────────────────────────────────────────────────
@@ -56,6 +57,82 @@ def compute_decision(mu_list: list) -> np.ndarray:
 def optimal_price(x: np.ndarray, mu_d: np.ndarray) -> tuple:
     idx = np.argmax(mu_d)
     return float(x[idx]), float(mu_d[idx])
+
+
+def build_pdf(chart_fig, df_table, x_opt, mu_opt,
+              u_min, u_max, prod_cost, comp_price, double_cost,
+              r1_a, r1_b, r1_c, r3_a, r3_b, r3_c, r4_a, r4_b, r4_c):
+    """Genereaza un PDF cu doua pagini: grafice + sumar si tabel."""
+    buf = io.BytesIO()
+    with PdfPages(buf) as pdf:
+        # Pagina 1 — grafice
+        pdf.savefig(chart_fig, bbox_inches="tight")
+
+        # Pagina 2 — sumar parametri + tabel valori
+        fig2 = plt.figure(figsize=(11, 8.5))
+        fig2.patch.set_facecolor("white")
+
+        fig2.text(
+            0.5, 0.97,
+            "Model Fuzzy de Decizie — Rezultate",
+            ha="center", va="top", fontsize=14, fontweight="bold",
+        )
+        fig2.text(
+            0.5, 0.915,
+            (
+                f"Multimea alternativelor: [{u_min:.1f}, {u_max:.1f}]   "
+                f"Cost productie: {prod_cost:.2f}   2×cost: {double_cost:.2f}   "
+                f"Pretul concurentei: {comp_price:.2f}\n"
+                f"R1 (a,b,c): ({r1_a:.2f}, {r1_b:.2f}, {r1_c:.2f})   "
+                f"R3 (a,b,c): ({r3_a:.2f}, {r3_b:.2f}, {r3_c:.2f})   "
+                f"R4 (a,b,c): ({r4_a:.2f}, {r4_b:.2f}, {r4_c:.2f})"
+            ),
+            ha="center", va="top", fontsize=9, color="#555555", linespacing=1.7,
+        )
+        fig2.text(
+            0.5, 0.835,
+            f"Pret optim recomandat:  x* = {x_opt:.2f} u.m.   |   D(x*) = {mu_opt:.4f}",
+            ha="center", va="top", fontsize=11, fontweight="bold", color="#e65100",
+            bbox=dict(
+                boxstyle="round,pad=0.45",
+                facecolor="#fff3e0",
+                edgecolor="#e65100",
+                lw=1.5,
+            ),
+        )
+
+        ax2 = fig2.add_axes([0.04, 0.04, 0.92, 0.67])
+        ax2.axis("off")
+
+        col_labels = df_table.columns.tolist()
+        cell_text = [[str(v) for v in row] for row in df_table.values.tolist()]
+
+        tbl = ax2.table(
+            cellText=cell_text,
+            colLabels=col_labels,
+            loc="upper center",
+            cellLoc="center",
+        )
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(8.5)
+        tbl.scale(1, 1.5)
+
+        for j in range(len(col_labels)):
+            cell = tbl[0, j]
+            cell.set_facecolor("#4a148c")
+            cell.get_text().set_color("white")
+            cell.get_text().set_fontweight("bold")
+
+        for i in range(1, len(cell_text) + 1):
+            bg = "#f3e5f5" if i % 2 == 0 else "white"
+            for j in range(len(col_labels)):
+                tbl[i, j].set_facecolor(bg)
+
+        pdf.savefig(fig2, bbox_inches="tight")
+        plt.close(fig2)
+
+    buf.seek(0)
+    return buf
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -116,7 +193,7 @@ with st.sidebar:
         r1_c = st.number_input("c1 (dreapta)", value=u_min + span / 2, key=f"r1c_{u_min:.4f}_{u_max:.4f}", format="%.2f")
 
     # ── R3: Pret ~ 2×cost ────────────────────────────────────────────────────
-    # Key dinamic bazat pe double_cost → se reinitializeaza la schimbarea costului
+    # Key dinamic bazat pe double_cost si span → se reinitializeaza la orice schimbare
     with st.expander(f"R3 — Pret aproape de 2 x cost ({double_cost:.2f})", expanded=True):
         st.caption("Triunghi simetric centrat pe dublul costului de productie.")
         r3_a = st.number_input("a3 (stanga)", value=double_cost - half_w, key=f"r3a_{double_cost:.4f}_{span:.4f}", format="%.2f")
@@ -124,7 +201,7 @@ with st.sidebar:
         r3_c = st.number_input("c3 (dreapta)", value=double_cost + half_w, key=f"r3c_{double_cost:.4f}_{span:.4f}", format="%.2f")
 
     # ── R4: Pret ~ concurenta ─────────────────────────────────────────────────
-    # Key dinamic bazat pe comp_price → se reinitializeaza la schimbarea concurentei
+    # Key dinamic bazat pe comp_price si span → se reinitializeaza la orice schimbare
     with st.expander(f"R4 — Pret aproape de concurenta ({comp_price:.2f})", expanded=True):
         st.caption("Triunghi simetric centrat pe pretul concurentei.")
         r4_a = st.number_input("a4 (stanga)", value=comp_price - half_w, key=f"r4a_{comp_price:.4f}_{span:.4f}", format="%.2f")
@@ -147,6 +224,16 @@ mu_r4 = trimf(x, r4_a, r4_b, r4_c)
 
 mu_d = compute_decision([mu_r1, mu_r3, mu_r4])
 x_opt, mu_opt = optimal_price(x, mu_d)
+
+# Tabel esantion — construit devreme pentru a fi disponibil in PDF
+idx_sample = np.linspace(0, len(x) - 1, 15, dtype=int)
+df_sample = pd.DataFrame({
+    "Pret x": np.round(x[idx_sample], 3),
+    "mu_R1(x)": np.round(mu_r1[idx_sample], 4),
+    "mu_R3(x)": np.round(mu_r3[idx_sample], 4),
+    "mu_R4(x)": np.round(mu_r4[idx_sample], 4),
+    "D(x) = medie": np.round(mu_d[idx_sample], 4),
+})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -219,10 +306,16 @@ ax2.legend(fontsize=9, loc="upper right")
 ax2.grid(True, alpha=0.25, linestyle=":")
 ax2.spines[["top", "right"]].set_visible(False)
 
-# Salveaza figura in buffer pentru export inainte de afisare
+# Salveaza figurile in buffere pentru export, inainte de afisare
 png_buf = io.BytesIO()
 fig.savefig(png_buf, format="png", dpi=150, bbox_inches="tight")
 png_buf.seek(0)
+
+pdf_buf = build_pdf(
+    fig, df_sample, x_opt, mu_opt,
+    u_min, u_max, prod_cost, comp_price, double_cost,
+    r1_a, r1_b, r1_c, r3_a, r3_b, r3_c, r4_a, r4_b, r4_c,
+)
 
 st.pyplot(fig, use_container_width=True)
 plt.close(fig)
@@ -244,7 +337,7 @@ df_full = pd.DataFrame({
 csv_buf = io.StringIO()
 df_full.to_csv(csv_buf, index=False)
 
-ex1, ex2 = st.columns(2)
+ex1, ex2, ex3 = st.columns(3)
 ex1.download_button(
     label="⬇ Descarca date complete (CSV)",
     data=csv_buf.getvalue(),
@@ -259,6 +352,13 @@ ex2.download_button(
     mime="image/png",
     use_container_width=True,
 )
+ex3.download_button(
+    label="⬇ Descarca raport complet (PDF)",
+    data=pdf_buf,
+    file_name="fuzzy_pret_raport.pdf",
+    mime="application/pdf",
+    use_container_width=True,
+)
 
 st.markdown("---")
 
@@ -268,15 +368,6 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════════════════════════════
 
 st.markdown("#### Tabel valori calculate (esantion)")
-
-idx_sample = np.linspace(0, len(x) - 1, 15, dtype=int)
-df_sample = pd.DataFrame({
-    "Pret x": np.round(x[idx_sample], 3),
-    "mu_R1(x)": np.round(mu_r1[idx_sample], 4),
-    "mu_R3(x)": np.round(mu_r3[idx_sample], 4),
-    "mu_R4(x)": np.round(mu_r4[idx_sample], 4),
-    "D(x) = medie": np.round(mu_d[idx_sample], 4),
-})
 st.dataframe(df_sample, use_container_width=True, hide_index=True)
 
 st.markdown("---")
@@ -326,5 +417,6 @@ st.latex(r"""
 
 st.markdown("---")
 st.caption(
-    "Schiller Vlad ; Parvan Eduard | Modelarea si Optimizarea Deciziei Economice"
+    "Model fuzzy de decizie — Decizia de pret pentru produse noi (II) | "
+    "Metoda mediei aritmetice | R1, R3, R4"
 )
