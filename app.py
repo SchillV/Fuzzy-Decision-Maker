@@ -1,13 +1,4 @@
-"""
-Model Fuzzy de Decizie - Decizia de Pret pentru Produse Noi
-Metoda mediei aritmetice | Reguli: R1 & R3 & R4
-
-Rulare: streamlit run app.py
-Dependinte: pip install streamlit matplotlib numpy pandas
-"""
-
 import io
-
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
@@ -139,7 +130,8 @@ def build_pdf(chart_fig, df_table, x_opt, mu_opt,
 # TITLU
 # ══════════════════════════════════════════════════════════════════════════════
 
-st.title("Model Fuzzy de Decizie — Decizia de Pret pentru Produse Noi")
+st.title("Model Fuzzy de Decizie: Decizia de Pret pentru Produse Noi")
+st.markdown("***Modelarea si Optimizarea Deciziei Economice | Schiller Vlad | Parvan Eduard***")
 st.markdown(
     "**Metoda:** Media aritmetica &nbsp;|&nbsp; "
     "**Reguli active:** R1, R3, R4 &nbsp;|&nbsp; "
@@ -417,6 +409,5 @@ st.latex(r"""
 
 st.markdown("---")
 st.caption(
-    "Model fuzzy de decizie — Decizia de pret pentru produse noi (II) | "
-    "Metoda mediei aritmetice | R1, R3, R4"
+    "Modelarea si Optizarea Deciziei Economice | Schiller Vlad | Parvan Eduard"
 )
