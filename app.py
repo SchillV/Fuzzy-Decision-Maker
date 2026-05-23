@@ -2,8 +2,10 @@ import io
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+import matplotlib.image as mpimg
 from matplotlib.backends.backend_pdf import PdfPages
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 
 # ── Configurare pagina ─────────────────────────────────────────────────────────
@@ -50,14 +52,21 @@ def optimal_price(x: np.ndarray, mu_d: np.ndarray) -> tuple:
     return float(x[idx]), float(mu_d[idx])
 
 
-def build_pdf(chart_fig, df_table, x_opt, mu_opt,
+def build_pdf(chart_png_bytes, df_table, x_opt, mu_opt,
               u_min, u_max, prod_cost, comp_price, double_cost,
               r1_a, r1_b, r1_c, r3_a, r3_b, r3_c, r4_a, r4_b, r4_c):
     """Genereaza un PDF cu doua pagini: grafice + sumar si tabel."""
     buf = io.BytesIO()
     with PdfPages(buf) as pdf:
-        # Pagina 1 — grafice
-        pdf.savefig(chart_fig, bbox_inches="tight")
+        # Pagina 1 — grafice (embed the Plotly-rendered PNG)
+        chart_img = mpimg.imread(io.BytesIO(chart_png_bytes))
+        fig1, ax_img = plt.subplots(figsize=(11, 5.5))
+        fig1.patch.set_facecolor("white")
+        ax_img.imshow(chart_img)
+        ax_img.axis("off")
+        fig1.tight_layout(pad=0)
+        pdf.savefig(fig1, bbox_inches="tight")
+        plt.close(fig1)
 
         # Pagina 2 — sumar parametri + tabel valori
         fig2 = plt.figure(figsize=(11, 8.5))
@@ -245,72 +254,96 @@ st.markdown("")
 # GRAFICE
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 COLORS = {
     "r1": "#1565c0",
     "r3": "#2e7d32",
     "r4": "#c62828",
-    "d": "#6a1b9a",
+    "d":  "#6a1b9a",
     "opt": "#f57c00",
 }
 
-fig = plt.figure(figsize=(11, 5.5))
-gs = gridspec.GridSpec(2, 1, hspace=0.45)
-ax1 = fig.add_subplot(gs[0])
-ax2 = fig.add_subplot(gs[1])
+fig = make_subplots(
+    rows=2, cols=1,
+    subplot_titles=(
+        "Functiile de apartenenta ale regulilor fuzzy",
+        "Functia de decizie fuzzy — metoda mediei aritmetice",
+    ),
+    vertical_spacing=0.16,
+)
 
 # Grafic 1 — functiile individuale
-ax1.fill_between(x, mu_r1, alpha=0.10, color=COLORS["r1"])
-ax1.fill_between(x, mu_r3, alpha=0.10, color=COLORS["r3"])
-ax1.fill_between(x, mu_r4, alpha=0.10, color=COLORS["r4"])
-ax1.plot(x, mu_r1, color=COLORS["r1"], lw=2.2, label="R1 — Pret scazut")
-ax1.plot(x, mu_r3, color=COLORS["r3"], lw=2.2, label=f"R3 — Pret ≈ 2×cost ({double_cost:.1f})")
-ax1.plot(x, mu_r4, color=COLORS["r4"], lw=2.2, label=f"R4 — Pret ≈ concurenta ({comp_price:.1f})")
-ax1.axvline(x_opt, color=COLORS["opt"], lw=1.4, ls="--", alpha=0.7)
-ax1.set_xlim(u_min, u_max)
-ax1.set_ylim(-0.04, 1.12)
-ax1.set_xlabel("Pret (u.m.)", fontsize=10)
-ax1.set_ylabel("Grad de apartenenta  μ(x)", fontsize=10)
-ax1.set_title("Functiile de apartenenta ale regulilor fuzzy", fontsize=11, fontweight="bold")
-ax1.legend(fontsize=9, loc="upper right")
-ax1.grid(True, alpha=0.25, linestyle=":")
-ax1.spines[["top", "right"]].set_visible(False)
+for mu, color, name in [
+    (mu_r1, COLORS["r1"], "R1 — Pret scazut"),
+    (mu_r3, COLORS["r3"], f"R3 — Pret ≈ 2×cost ({double_cost:.1f})"),
+    (mu_r4, COLORS["r4"], f"R4 — Pret ≈ concurenta ({comp_price:.1f})"),
+]:
+    fig.add_trace(
+        go.Scatter(
+            x=x, y=mu, mode="lines",
+            line=dict(color=color, width=2.2),
+            fill="tozeroy", fillcolor=_rgba(color, 0.10),
+            name=name,
+        ),
+        row=1, col=1,
+    )
+fig.add_vline(x=x_opt, line=dict(color=COLORS["opt"], width=1.4, dash="dash"),
+              opacity=0.7, row=1, col=1)
 
 # Grafic 2 — functia de decizie
-ax2.fill_between(x, mu_d, alpha=0.15, color=COLORS["d"])
-ax2.plot(x, mu_d, color=COLORS["d"], lw=2.5,
-         label="D(x) = [μ₁ + μ₃ + μ₄] / 3")
-ax2.axvline(x_opt, color=COLORS["opt"], lw=2, ls="--",
-            label=f"Pret optim: {x_opt:.2f} u.m.  (D = {mu_opt:.4f})")
-ax2.scatter([x_opt], [mu_opt], color=COLORS["opt"], zorder=6, s=90, ec="white", lw=1.5)
-ax2.annotate(
-    f"  x* = {x_opt:.2f}\n  D(x*) = {mu_opt:.4f}",
-    xy=(x_opt, mu_opt),
-    xytext=(x_opt + span * 0.05, mu_opt - 0.12),
-    fontsize=9, color=COLORS["opt"],
-    arrowprops=dict(arrowstyle="->", color=COLORS["opt"], lw=1.2),
+fig.add_trace(
+    go.Scatter(
+        x=x, y=mu_d, mode="lines",
+        line=dict(color=COLORS["d"], width=2.5),
+        fill="tozeroy", fillcolor=_rgba(COLORS["d"], 0.15),
+        name="D(x) = [μ₁ + μ₃ + μ₄] / 3",
+    ),
+    row=2, col=1,
 )
-ax2.set_xlim(u_min, u_max)
-ax2.set_ylim(-0.04, 1.12)
-ax2.set_xlabel("Pret (u.m.)", fontsize=10)
-ax2.set_ylabel("Grad de decizie  D(x)", fontsize=10)
-ax2.set_title("Functia de decizie fuzzy — metoda mediei aritmetice", fontsize=11, fontweight="bold")
-ax2.legend(fontsize=9, loc="upper right")
-ax2.grid(True, alpha=0.25, linestyle=":")
-ax2.spines[["top", "right"]].set_visible(False)
+fig.add_trace(
+    go.Scatter(
+        x=[x_opt], y=[mu_opt], mode="markers",
+        marker=dict(color=COLORS["opt"], size=10, line=dict(color="white", width=2)),
+        name=f"Pret optim: {x_opt:.2f} u.m.  (D = {mu_opt:.4f})",
+    ),
+    row=2, col=1,
+)
+fig.add_vline(x=x_opt, line=dict(color=COLORS["opt"], width=2, dash="dash"),
+              row=2, col=1)
+fig.add_annotation(
+    x=x_opt + span * 0.05, y=mu_opt - 0.12,
+    text=f"x* = {x_opt:.2f}<br>D(x*) = {mu_opt:.4f}",
+    showarrow=True, arrowhead=2, arrowcolor=COLORS["opt"],
+    font=dict(color=COLORS["opt"], size=9),
+    row=2, col=1,
+)
 
-# Salveaza figurile in buffere pentru export, inainte de afisare
-png_buf = io.BytesIO()
-fig.savefig(png_buf, format="png", dpi=150, bbox_inches="tight")
-png_buf.seek(0)
+fig.update_xaxes(range=[u_min, u_max], title_text="Pret (u.m.)")
+fig.update_yaxes(range=[-0.04, 1.12])
+fig.update_yaxes(title_text="Grad de apartenenta  μ(x)", row=1, col=1)
+fig.update_yaxes(title_text="Grad de decizie  D(x)", row=2, col=1)
+fig.update_layout(
+    height=600,
+    margin=dict(l=60, r=20, t=50, b=40),
+    legend=dict(orientation="v", x=1.01, y=1, xanchor="left"),
+)
+
+# Salveaza in buffere pentru export, inainte de afisare
+png_bytes = fig.to_image(format="png", scale=2, width=1200, height=600)
+png_buf = io.BytesIO(png_bytes)
 
 pdf_buf = build_pdf(
-    fig, df_sample, x_opt, mu_opt,
+    png_bytes, df_sample, x_opt, mu_opt,
     u_min, u_max, prod_cost, comp_price, double_cost,
     r1_a, r1_b, r1_c, r3_a, r3_b, r3_c, r4_a, r4_b, r4_c,
 )
 
-st.pyplot(fig, use_container_width=True)
-plt.close(fig)
+st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

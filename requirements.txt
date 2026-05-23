@@ -1,0 +1,6 @@
+streamlit==1.57.0
+numpy==2.3.4
+matplotlib==3.10.7
+plotly==6.4.0
+kaleido==1.3.0
+pandas==2.3.3
